@@ -1,0 +1,168 @@
+{
+  "Comment": "A description of my state machine with ECS task for WSI Transform",
+  "StartAt": "Manage Configuration",
+  "States": {
+    "Manage Configuration": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "arn:aws:lambda:us-east-1:229055855186:function:ManageConfig4DICOMToFHIRConversionProcess:$LATEST"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "Next": "Parallel"
+    },
+    "Parallel": {
+      "Type": "Parallel",
+      "Branches": [
+        {
+          "StartAt": "Transform WSI DICOM To FHIR V4",
+          "States": {
+            "Transform WSI DICOM To FHIR V4": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::ecs:runTask.sync",
+              "Parameters": {
+                "LaunchType": "FARGATE",
+                "TaskDefinition": "TASK_DEFINITION_ARN_PLACEHOLDER",
+                "Cluster": "CLUSTER_ARN_PLACEHOLDER",
+                "NetworkConfiguration": {
+                  "AwsvpcConfiguration": {
+                    "Subnets": ["subnet-12345"],
+                    "AssignPublicIp": "ENABLED"
+                  }
+                },
+                "Overrides": {
+                  "ContainerOverrides": [
+                    {
+                      "Name": "WSITransformContainer",
+                      "Environment": [
+                        {
+                          "Name": "S3_LandingBucketName",
+                          "Value.$": "$.S3_LandingBucketName"
+                        },
+                        {
+                          "Name": "S3_DICOMFileKey",
+                          "Value.$": "$.S3_DICOMFileKey"
+                        },
+                        {
+                          "Name": "S3_FHIROutPutBucketName",
+                          "Value.$": "$.S3_FHIROutPutBucketName"
+                        },
+                        {
+                          "Name": "S3_CustomFHIRFileName",
+                          "Value.$": "$.S3_CustomFHIRFileName"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "States.TaskFailed"
+                  ],
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2,
+                  "JitterStrategy": "FULL"
+                }
+              ],
+              "Next": "convert FHIR JSON to NDJSON",
+              "ResultPath": "$.myStateInput.OriginalEvent"
+            },
+            "convert FHIR JSON to NDJSON": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "Payload.$": "$",
+                "FunctionName": "arn:aws:lambda:us-east-1:229055855186:function:convertFHIRtoNDJSON:$LATEST"
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2,
+                  "JitterStrategy": "FULL"
+                }
+              ],
+              "Next": "StartFHIRImportJobToHealthLake",
+              "ResultPath": "$.myStateInput.OriginalEvent"
+            },
+            "StartFHIRImportJobToHealthLake": {
+              "Type": "Task",
+              "Parameters": {
+                "DataAccessRoleArn.$": "$.HealthLake_ImportExecutionRoleArn",
+                "DatastoreId.$": "$.HL_DS_ID",
+                "InputDataConfig": {
+                  "S3Uri.$": "$.S3_HealthLakeImportBucketName"
+                },
+                "JobOutputDataConfig": {
+                  "S3Configuration": {
+                    "S3Uri.$": "$.S3_HealthLakeOutputBucketName",
+                    "KmsKeyId.$": "$.KMSKeyID_HealthLakeImportJob"
+                  }
+                }
+              },
+              "Resource": "arn:aws:states:::aws-sdk:healthlake:startFHIRImportJob",
+              "End": true
+            }
+          }
+        },
+        {
+          "StartAt": "CreateDatastore",
+          "States": {
+            "CreateDatastore": {
+              "Type": "Task",
+              "Parameters": {
+                "ClientToken.$": "$.ImageStoreID_ImportJob",
+                "DatastoreName.$": "$.ImageStoreID_ImportJob"
+              },
+              "Resource": "arn:aws:states:::aws-sdk:medicalimaging:createDatastore",
+              "Next": "Wait",
+              "ResultPath": "$.OutputOfCreateImageStore"
+            },
+            "Wait": {
+              "Type": "Wait",
+              "Seconds": 500,
+              "Next": "StartDICOMImportJob"
+            },
+            "StartDICOMImportJob": {
+              "Type": "Task",
+              "Parameters": {
+                "ClientToken.$": "$.OutputOfCreateImageStore.DatastoreId",
+                "DataAccessRoleArn.$": "$.ImageStore_CreateImportRoleArn",
+                "DatastoreId.$": "$.OutputOfCreateImageStore.DatastoreId",
+                "InputS3Uri.$": "$.ImageImportJob_InputS3Bucket",
+                "OutputS3Uri.$": "$.ImageImportJob_OutputS3Bucket"
+              },
+              "Resource": "arn:aws:states:::aws-sdk:medicalimaging:startDICOMImportJob",
+              "End": true
+            }
+          }
+        }
+      ],
+      "End": true
+    }
+  }
+}
