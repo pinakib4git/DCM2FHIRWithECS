@@ -38,7 +38,7 @@ cdk deploy DCM2FHIRMasterStack-New
 
 ## Project Structure
 
-- `aws_dcm2fhir_project/` - Main project code
+- `aws_dcm2fhir_ecs/` - Main project code
   - `master_stack.py` - Main stack that creates all nested stacks
   - `aws_lambda_stack.py` - Lambda functions for processing
   - `aws_s3_stack.py` - S3 buckets for storage
@@ -46,6 +46,7 @@ cdk deploy DCM2FHIRMasterStack-New
   - `aws_eventbridge_new_stack.py` - EventBridge for event handling
   - `aws_kmskey_stack.py` - KMS keys for encryption
   - `aws_healthlake_stack.py` - HealthLake for FHIR data
+  - 'aws_ecs_stack.py' - ECS task execution for WSI Transform step (Refer README_ECS_Migration.md for more details on ECR, Docker, ECS Task, Roles and all)
   - Lambda function code in respective directories
 
 ## Contributing
