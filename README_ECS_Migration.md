@@ -45,7 +45,7 @@ cdk deploy DCM2FHIRMasterStack-PRD
 chmod +x build_and_push.sh
 
 # Build and push (replace with your values)
-./build_and_push.sh 241003932265 us-east-1 uat-xxx-wsi-transform
+./build_and_push.sh <AccountNumber> us-east-1 uat-xxx-wsi-transform
 ```
 
 ### 3. Update Task Definition
